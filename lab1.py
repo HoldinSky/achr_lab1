@@ -29,30 +29,43 @@ def calculateAIC(e, p, q, N):
     n = p + q + 1
     return N * math.log(sumError / N) + 2 * n
 
-# Функція для генерації одного нормально розподіленого числа за допомогою рівномірно розподілених чисел
-def generateNormalRandom():
-    sum_vals = sum(random.uniform(-1, 1) for _ in range(12))
-    return sum_vals - 6  # Повертаємо нормально розподілене число
-
 def create_data(file, n):
     for _ in range(n):
-        file.write(str(generateNormalRandom()) + "\n")
+        file.write(str(np.random.normal(0, 1)) + "\n")
 
-def arma(y, p, q):
-    global P, Q
-    n = len(y)
+def arma(noise, p, q):
+    global A, B
+    n = len(noise)
     m = max(p, q)
 
-    y_hat, e = np.zeros(n), np.zeros(n)
-    y_hat[:m] = y[:m]
+    y, residuals = np.zeros(n), np.zeros(n)
+    y[:m] = noise[:m]
 
     for t in range(m, n):
-        ar_part = np.sum([P[i] * y[t-i-1] for i in range(p)])  # AR частина
-        ma_part = np.sum([Q[i] * e[t-i-1] for i in range(q)])  # MA частина
-        y_hat[t] = ar_part + ma_part
-        e[t] = y[t] - y_hat[t]
+        ar_part = A[0] + sum([A[i] * y[t-i] for i in range(1, p+1)])  # AR частина
+        ma_part = sum([B[i-1] * noise[t-i] for i in range(1, q+1)])  # MA частина
+        y[t] = noise[t] + ar_part + ma_part
+        residuals[t] = noise[t] # залишкт (похибки)
 
-    return y_hat, e
+    return y, residuals
+
+def regressor_matrix(y, res, p, q):
+    n = len(y)
+    m = max(p, q)
+    x = np.zeros((n - m, p + q + 2))
+    
+    e_offset = p + 1
+    
+    for t in range(m, n):
+        x[t-m, 0] = 1
+        for i in range(1, p+1):
+            x[t-m, i] = y[t-i]
+        
+        x[t-m, e_offset] = res[t]
+        for i in range(1, q+1):
+            x[t-m, e_offset+i] = res[t-i]
+    
+    return x
 
 def mnk(y, x):
     return np.linalg.inv(x.T @ x) @ x.T @ y
@@ -73,28 +86,36 @@ def rmnk(y, X, beta=10):
 # Головна програма
 def main():
     # Задаємо коефіцієнти
-    global P, Q
-    P = [0.05, 0.45, 0.09, -0.38]
-    Q = [0.6, 0.4, 0]
+    global A, B
+    A = [0.05, 0.45, 0.09, -0.38]
+    B = [0.6, 0.4, 0]
 
-    # Зчитуємо часовий ряд з файлу
-    y = []
+    # Зчитуємо послідовність білого шуму з файлу
+    noise = []
     with open('./data/time_series.txt', 'r') as file:
-        y = [float(value.strip()) for value in file.readlines()]
-
-    for p in range(1,4):
-        for q in range(1,4):
+        noise = [float(value.strip()) for value in file.readlines()]
+    
+    for p in range(1, 4):
+        for q in range(1, 4):
             print(f"ARMA({p},{q})")
-            y_eval, e = arma(y, p, q)    
-
+            y, residuals = arma(noise, p, q)
+            y_dependent = y[max(p, q):]
+            X = regressor_matrix(y, residuals, p, q)
+            
+            theta = mnk(y_dependent, X)
+            a0 = theta[0]
+            A_ = theta[1:p+1]
+            R2_ = theta[p+1]
+            B_ = theta[p+2:]
+            
             # Обчислюємо коефіцієнт детермінації R^2
-            R2 = calculateR2(y, y_eval)
-            print(f"R^2: {R2}")
+            # R2 = calculateR2(y, y_dependent)
+            # print(f"R^2: {R2}")
 
             # Обчислюємо критерій Акайке
             N = len(y)
             p, q = 3, 2
-            AIC = calculateAIC(e, p, q, N)
+            AIC = calculateAIC(residuals, p, q, N)
             print(f"Akaike criterion (AIC): {AIC}\n")
 
 if __name__ == '__main__':
