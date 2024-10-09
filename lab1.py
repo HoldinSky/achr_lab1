@@ -70,18 +70,29 @@ def regressor_matrix(y, v, p, q):
 def mnk(y, x):
     return np.linalg.inv(x.T @ x) @ x.T @ y
 
-def rmnk(y, X, beta=10):
-    N, n_params = X.shape
+def rmnk(y, x, beta=10):
+    _, n_params = x.shape
 
     P = beta * np.eye(n_params)
     theta = np.zeros(n_params)
     for i in range(len(y)):
-        x_i = X[i, :].reshape(-1, 1)
+        x_i = x[i, :].reshape(-1, 1)
         y_i = y[i]
         
         P = P - (P @ x_i @ x_i.T @ P) / (1 + x_i.T @ P @ x_i)
         theta = theta + (P @ x_i).flatten() * (y_i - x_i.T @ theta)
     return theta
+
+def evaluate(y_dep, X, method, p, q):
+    theta = method(y_dep, X)
+    A = theta[:p+1]
+    R2 = theta[p+1]
+    B = theta[p+2:]
+    
+    y_predicted = X @ theta
+
+    AIC = calculateAIC(y_dep, y_predicted, p+q+1)
+    return A, B, R2, AIC
 
 # Головна програма
 def main():
@@ -103,15 +114,11 @@ def main():
             y_dependent = y[max(p, q):]
             X = regressor_matrix(y, noise, p, q)
             
-            theta = mnk(y_dependent, X)
-            A_ = theta[:p+1]
-            R2_ = theta[p+1]
-            B_ = theta[p+2:]
+            A_, B_, R2_, AIC = evaluate(y_dependent, X, mnk, p, q)
+            print(f"MNK: A = {A_}\nB = {B_}\nR2 = {R2_:.2f}, AIC = {AIC:.2f}\n------------")
             
-            y_predicted = X @ theta
-
-            AIC = calculateAIC(y_dependent, y_predicted, p+q+1)
-            print(f"A = {A_}\nB = {B_}\nR2 = {R2_:.2f}, AIC = {AIC:.2f}\n")
+            A_, B_, R2_, AIC = evaluate(y_dependent, X, rmnk, p, q)
+            print(f"RMNK: A = {A_}\nB = {B_}\nR2 = {R2_:.2f}, AIC = {AIC:.2f}\n")
 
 if __name__ == '__main__':
     if len(sys.argv) >= 3 and sys.argv[1] == "--generate-data":
