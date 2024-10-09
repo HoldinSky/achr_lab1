@@ -24,10 +24,11 @@ def calculateR2(y, y_hat):
     return 1 - (ss_residual / ss_total)
 
 # Функція для обчислення критерію Акаіке (IKA)
-def calculateAIC(e, p, q, N):
-    sumError = sum(ei ** 2 for ei in e)
-    n = p + q + 1
-    return N * math.log(sumError / N) + 2 * n
+def calculateAIC(y_dep, y_pred, n):
+    N = len(y_pred)
+    sumError = sum((y_pred[i] - y_dep[i]) ** 2 for i in range(N))
+    
+    return N * math.log(sumError) + 2*n
 
 def create_data(file, n):
     for _ in range(n):
@@ -38,18 +39,17 @@ def arma(noise, p, q):
     n = len(noise)
     m = max(p, q)
 
-    y, residuals = np.zeros(n), np.zeros(n)
+    y = np.zeros(n)
     y[:m] = noise[:m]
 
     for t in range(m, n):
         ar_part = A[0] + sum([A[i] * y[t-i] for i in range(1, p+1)])  # AR частина
         ma_part = sum([B[i-1] * noise[t-i] for i in range(1, q+1)])  # MA частина
         y[t] = noise[t] + ar_part + ma_part
-        residuals[t] = noise[t] # залишкт (похибки)
 
-    return y, residuals
+    return y
 
-def regressor_matrix(y, res, p, q):
+def regressor_matrix(y, v, p, q):
     n = len(y)
     m = max(p, q)
     x = np.zeros((n - m, p + q + 2))
@@ -61,9 +61,9 @@ def regressor_matrix(y, res, p, q):
         for i in range(1, p+1):
             x[t-m, i] = y[t-i]
         
-        x[t-m, e_offset] = res[t]
+        x[t-m, e_offset] = v[t]
         for i in range(1, q+1):
-            x[t-m, e_offset+i] = res[t-i]
+            x[t-m, e_offset+i] = v[t-i]
     
     return x
 
@@ -98,25 +98,20 @@ def main():
     for p in range(1, 4):
         for q in range(1, 4):
             print(f"ARMA({p},{q})")
-            y, residuals = arma(noise, p, q)
+
+            y = arma(noise, p, q)
             y_dependent = y[max(p, q):]
-            X = regressor_matrix(y, residuals, p, q)
+            X = regressor_matrix(y, noise, p, q)
             
             theta = mnk(y_dependent, X)
-            a0 = theta[0]
-            A_ = theta[1:p+1]
+            A_ = theta[:p+1]
             R2_ = theta[p+1]
             B_ = theta[p+2:]
             
-            # Обчислюємо коефіцієнт детермінації R^2
-            # R2 = calculateR2(y, y_dependent)
-            # print(f"R^2: {R2}")
+            y_predicted = X @ theta
 
-            # Обчислюємо критерій Акайке
-            N = len(y)
-            p, q = 3, 2
-            AIC = calculateAIC(residuals, p, q, N)
-            print(f"Akaike criterion (AIC): {AIC}\n")
+            AIC = calculateAIC(y_dependent, y_predicted, p+q+1)
+            print(f"A = {A_}\nB = {B_}\nR2 = {R2_:.2f}, AIC = {AIC:.2f}\n")
 
 if __name__ == '__main__':
     if len(sys.argv) >= 3 and sys.argv[1] == "--generate-data":
