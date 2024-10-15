@@ -1,7 +1,7 @@
 import numpy as np
 import math
-import random
 import sys
+import matplotlib.pyplot as plt
 
 # Функція для оцінки MНК
 def leastSquares(y, x):
@@ -29,6 +29,9 @@ def calculateAIC(y_dep, y_pred, n):
     sumError = sum((y_pred[i] - y_dep[i]) ** 2 for i in range(N))
     
     return N * math.log(sumError) + 2*n
+
+def generate_white_noise(n):
+    return [np.random.normal(0, 1) for _ in range(n)]
 
 def create_data(file, n):
     for _ in range(n):
@@ -94,16 +97,67 @@ def evaluate(y_dep, X, method, p, q):
     AIC = calculateAIC(y_dep, y_predicted, p+q+1)
     return A, B, R2, AIC
 
+def plot_coefficients(noise_lengths, coeff_history, true_values, coeff_name, method=None):
+    plt.figure(figsize=(8, 6))
+    
+    for i in range(len(true_values)):
+        coef_i = prepare_plot_data(coeff_history, i)
+
+        plt.plot(noise_lengths, coef_i, marker="o")
+        plt.axhline(y=true_values[i], color="r", linestyle="--", label=f"Справжній {coeff_name}{i+1}")
+
+        if method is not None:
+            plt.title(f"Зміна коефіцієнту {coeff_name}{i+1} ({method})")
+        else:
+            plt.title(f"Зміна коефіцієнту {coeff_name}{i+1}")
+        plt.xlabel("Довжина ряду")
+        plt.ylabel("Значення коефіцієнту")
+        plt.legend()
+        plt.show()
+
+    
+def prepare_plot_data(history, index):
+    n = len(history)
+    out = []
+    for i in range(n):
+        out.append(history[i][index])
+
+    return out
+
+def test_by_time_series():
+    A_history_mnk, B_history_mnk, A_history_rmnk, B_history_rmnk = [], [], [], []
+    
+    p, q = 3, 3
+    noise_lengths = list(range(10, 101, 10))
+    
+    noise: list
+    for n in noise_lengths:
+        noise = generate_white_noise(n)
+
+        y = arma(noise, p, q)
+        y_dependent = y[max(p, q):]
+        X = regressor_matrix(y, noise, p, q)
+        
+        # оцінити за допомогою MNK
+        A_, B_, _, _ = evaluate(y_dependent, X, mnk, p, q)
+        A_history_mnk.append(A_)
+        B_history_mnk.append(B_)
+        
+        # оцінити за допомогою RMNK
+        A_, B_, _, _ = evaluate(y_dependent, X, rmnk, p, q)
+        A_history_rmnk.append(A_)
+        B_history_rmnk.append(B_)
+    
+    plot_coefficients(noise_lengths, A_history_mnk, A, "a", "МНК")
+    plot_coefficients(noise_lengths, A_history_rmnk, A, "a", "РМНК")
+    plot_coefficients(noise_lengths, B_history_mnk, B, "b", "МНК")
+    plot_coefficients(noise_lengths, B_history_rmnk, B, "b", "РМНК")
+    
 # Головна програма
 def main():
-    # Задаємо коефіцієнти
-    global A, B
-    A = [0.05, 0.45, 0.09, -0.38]
-    B = [0.6, 0.4, 0]
-
     # Зчитуємо послідовність білого шуму з файлу
     noise = []
-    with open('./data/time_series.txt', 'r') as file:
+    with open("./data/time_series.txt", "r") as file:
         noise = [float(value.strip()) for value in file.readlines()]
     
     for p in range(1, 4):
@@ -114,15 +168,23 @@ def main():
             y_dependent = y[max(p, q):]
             X = regressor_matrix(y, noise, p, q)
             
+            # оцінити за допомогою MNK
             A_, B_, R2_, AIC = evaluate(y_dependent, X, mnk, p, q)
             print(f"MNK: A = {A_}\nB = {B_}\nR2 = {R2_:.2f}, AIC = {AIC:.2f}\n------------")
             
+            # оцінити за допомогою RMNK
             A_, B_, R2_, AIC = evaluate(y_dependent, X, rmnk, p, q)
             print(f"RMNK: A = {A_}\nB = {B_}\nR2 = {R2_:.2f}, AIC = {AIC:.2f}\n")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    global A, B
+    A = [0.05, 0.45, 0.09, -0.38]
+    B = [0.6, 0.4, 0]
+    
     if len(sys.argv) >= 3 and sys.argv[1] == "--generate-data":
         with open("./data/time_series.txt", "w") as file:
             create_data(file, int(sys.argv[2]))
+    elif len(sys.argv) >= 2 and sys.argv[1] == "--test":
+        test_by_time_series()
     else:
         main()
